@@ -7,9 +7,8 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from models.Resnet_LSTM import ResNetLSTM
-from models.CViT import CViT
 from datasets.data_loader import WikiArtDataset, collate_skip_none
-
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device):
     model.train()
@@ -57,24 +56,27 @@ def evaluate(model, dataloader, criterion, device):
 
 def plot_metrics(history, save_path):
     epochs = range(1, len(history["train_loss"]) + 1)
-    fig, axs = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    plt.figure(figsize=(12, 8))
 
-    # --- Plot Loss & Accuracy ---
-    axs[0].plot(epochs, history["train_loss"], label='Train Loss', color='blue', linestyle='-')
-    axs[0].plot(epochs, history["val_loss"], label='Val Loss', color='blue', linestyle='--')
-    axs[0].plot(epochs, history["train_acc"], label='Train Acc', color='green', linestyle='-')
-    axs[0].plot(epochs, history["val_acc"], label='Val Acc', color='green', linestyle='--')
-    axs[0].set_ylabel("Loss / Accuracy")
-    axs[0].legend()
-    axs[0].set_title("Loss and Accuracy")
+    # Plot Loss
+    plt.plot(epochs, history["train_loss"], label='Train Loss', color='#1f77b4', linestyle='-')
+    plt.plot(epochs, history["val_loss"], label='Val Loss', color='#1f77b4', linestyle='--')
 
-    # --- Plot Learning Rate ---
-    axs[1].plot(epochs, history["lr"], label='Learning Rate', color='red')
-    axs[1].set_xlabel("Epoch")
-    axs[1].set_ylabel("Learning Rate")
-    axs[1].legend()
-    axs[1].set_title("Learning Rate Schedule")
+    # Plot Accuracy
+    plt.plot(epochs, history["train_acc"], label='Train Acc', color='#2ca02c', linestyle='-')
+    plt.plot(epochs, history["val_acc"], label='Val Acc', color='#2ca02c', linestyle='--')
 
+    # Plot Scaled LR
+    max_loss = max(history["train_loss"] + history["val_loss"])
+    max_lr = max(history["lr"])
+    scaled_lr = [lr * (max_loss / max_lr) * 0.3 for lr in history["lr"]]
+    plt.plot(epochs, scaled_lr, label='Learning Rate (scaled)', color='#d62728', linestyle='-', alpha=0.6)
+
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss / Accuracy / Scaled LR")
+    plt.title("Training & Validation Metrics")
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.5)
     plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
@@ -86,7 +88,7 @@ def main():
     train_file = f"./datasets/{task}_train"
     val_file = f"./datasets/{task}_val"
     class_file = f"./datasets/{task}_class"
-    pretrained_model_path = f"checkpoints/{task}_best_model.pt"
+    pretrained_model_path = "checkpoints/artist_best_model.pt"
 
     num_classes = len(open(class_file).readlines())
     batch_size = 32
@@ -109,21 +111,22 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_skip_none)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_skip_none)
 
-    # === Load pretrained CViT ===
+    # === Load pretrained model ===
     model = ResNetLSTM(num_classes=num_classes)
     model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
 
-    # Replace classifier head
+    # === Replace classifier head ===
     model.mlp_head = nn.Sequential(
         nn.Linear(model.dim_model, model.dim_model * 2),
         nn.ReLU(),
         nn.Linear(model.dim_model * 2, num_classes)
     )
-
     model.to(device)
 
+    # === Loss, Optimizer, Scheduler ===
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
 
     # === History Tracking ===
     history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": [], "lr": []}
@@ -148,11 +151,13 @@ def main():
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} || "
               f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
+        scheduler.step(val_loss)
+
         # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
-            torch.save(model.state_dict(), os.path.join(save_dir, "best_model.pt"))
+            torch.save(model.state_dict(), os.path.join(save_dir, f"{task}_best_model.pt"))
             print("Saved best model.")
         else:
             epochs_no_improve += 1
@@ -163,11 +168,10 @@ def main():
             print("Early stopping triggered.")
             break
 
-        # Save checkpoint
-        torch.save(model.state_dict(), os.path.join(save_dir, f"resnet_lstm_epoch{epoch + 1}.pt"))
 
     # === Plot metrics ===
-    plot_metrics(history, os.path.join(save_dir, "combined_metrics.png"))
+    plot_metrics(history, os.path.join(save_dir, f"{task}_combined_metrics.png"))
+
 if __name__ == "__main__":
     os.makedirs("checkpoints", exist_ok=True)
     main()
