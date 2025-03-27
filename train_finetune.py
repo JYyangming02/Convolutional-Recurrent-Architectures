@@ -6,19 +6,22 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-from models.CViT import CViT
 from models.Resnet_LSTM import ResNetLSTM
+from models.CViT import CViT
 from datasets.data_loader import WikiArtDataset, collate_skip_none
-from utils.evaluate_metrics import evaluate_metrics
+
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device):
     model.train()
     running_loss, correct, total = 0.0, 0, 0
 
-    for images, labels in tqdm(dataloader, desc="Training", leave=False):
+    for batch in tqdm(dataloader, desc="Training"):
+        if batch is None:
+            continue
+        images, labels = batch
         images, labels = images.to(device), labels.to(device)
-        optimizer.zero_grad()
 
+        optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, labels)
         loss.backward()
@@ -37,7 +40,10 @@ def evaluate(model, dataloader, criterion, device):
     running_loss, correct, total = 0.0, 0, 0
 
     with torch.no_grad():
-        for images, labels in tqdm(dataloader, desc="Evaluating", leave=False):
+        for batch in tqdm(dataloader, desc="Evaluating"):
+            if batch is None:
+                continue
+            images, labels = batch
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -48,7 +54,6 @@ def evaluate(model, dataloader, criterion, device):
             correct += predicted.eq(labels).sum().item()
 
     return running_loss / total, correct / total
-
 
 def plot_metrics(history, save_path):
     epochs = range(1, len(history["train_loss"]) + 1)
@@ -74,41 +79,49 @@ def plot_metrics(history, save_path):
     plt.savefig(save_path)
     plt.close()
 
-
 def main():
-    # === Config ===
+    # === CONFIG ===
+    task = "genre"  # "artist", "style", or "genre"
     image_root = "./datasets/wikiart"
-    train_file = "./datasets/Artist/artist_train"
-    val_file = "./datasets/Artist/artist_val"
-    class_file = "./datasets/Artist/artist_class"
+    train_file = f"./datasets/{task}_train"
+    val_file = f"./datasets/{task}_val"
+    class_file = f"./datasets/{task}_class"
+    pretrained_model_path = f"checkpoints/{task}_best_model.pt"
 
+    num_classes = len(open(class_file).readlines())
     batch_size = 32
-    num_epochs = 50
+    num_epochs = 20
     learning_rate = 1e-4
     patience = 5  # Early stopping patience
     save_dir = "checkpoints"
 
-    num_classes = len(open(class_file).readlines())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"using:{device}")
-    os.makedirs(save_dir, exist_ok=True)
 
-    # === Dataset & Dataloader ===
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     ])
+
     train_dataset = WikiArtDataset(train_file, image_root, transform)
     val_dataset = WikiArtDataset(val_file, image_root, transform)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_skip_none)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_skip_none)
 
-    # === Model ===
-    model = ResNetLSTM(num_classes=num_classes).to(device)
+    # === Load pretrained CViT ===
+    model = ResNetLSTM(num_classes=num_classes)
+    model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
 
-    # === Loss, Optimizer ===
+    # Replace classifier head
+    model.mlp_head = nn.Sequential(
+        nn.Linear(model.dim_model, model.dim_model * 2),
+        nn.ReLU(),
+        nn.Linear(model.dim_model * 2, num_classes)
+    )
+
+    model.to(device)
+
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -155,12 +168,6 @@ def main():
 
     # === Plot metrics ===
     plot_metrics(history, os.path.join(save_dir, "combined_metrics.png"))
-
-    print("\nEvaluating best model with full metrics:")
-    class_names = [line.strip() for line in open(class_file)]
-    model.load_state_dict(torch.load(os.path.join(save_dir, "best_model.pt")))
-    evaluate_metrics(model, val_loader, class_names, device)
-
-
 if __name__ == "__main__":
+    os.makedirs("checkpoints", exist_ok=True)
     main()
