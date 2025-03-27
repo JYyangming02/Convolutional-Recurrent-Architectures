@@ -174,9 +174,9 @@ cython_debug/
 .pypirc
 
 # Big dataset files
-<<<<<<< HEAD
+HEAD
 datasets/wikiart/
 checkpoints/*.pt
-=======
+
 datasets/wikiart/
->>>>>>> bd7917a1882f75f8490a67395e2b0132353c4541
+bd7917a1882f75f8490a67395e2b0132353c4541
