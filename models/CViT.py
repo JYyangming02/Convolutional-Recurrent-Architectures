@@ -130,6 +130,7 @@ class CViT(nn.Module):
 
     def forward(self, img, mask=None):
         x = self.cnn(img)
+<<<<<<< HEAD
         b, c, h, w = x.shape
         p = self.patch_size
 
@@ -139,6 +140,9 @@ class CViT(nn.Module):
             new_w = (w // p) * p
             x = F.adaptive_avg_pool2d(x, (new_h, new_w))
 
+=======
+        p = self.patch_size
+>>>>>>> bd7917a1882f75f8490a67395e2b0132353c4541
         x = rearrange(x, 'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1=p, p2=p)
         x = self.patch_to_embedding(x)
 
