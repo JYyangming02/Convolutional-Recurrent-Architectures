@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 import torch
 
-class WikiArtDataset(Dataset):
+class csv_Dataset(Dataset):
     def __init__(self, data_file, image_root, transform=None):
         super().__init__()
         self.image_root = os.path.normpath(image_root)
@@ -14,16 +14,17 @@ class WikiArtDataset(Dataset):
         self.total_samples = 0
         self.missing_count = 0
 
-        with open(data_file, 'r') as f:
+        with open(data_file, 'r', encoding='utf-8') as f:
             for line in f:
                 if line.strip() == '' or 'Path to image' in line:
-                    continue
-                parts = line.strip().split(',,')
+                    continue  # skip header or empty lines
+                parts = line.strip().split(',')
                 if len(parts) != 2:
                     continue
                 path, label = parts
                 path = path.strip().replace('\\', '/')
 
+                # Remove redundant prefix if exists
                 if path.startswith(self.image_root.replace('\\', '/')):
                     path = os.path.relpath(path, self.image_root)
                 elif 'datasets/wikiart/' in path:
@@ -67,5 +68,3 @@ def collate_skip_none(batch):
     if not batch:
         return None
     return torch.utils.data.default_collate(batch)
-
-

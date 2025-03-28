@@ -2,21 +2,42 @@ import os
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
+
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
+from ranger21 import Ranger21
 
 from models.Resnet_LSTM import ResNetLSTM
-from datasets.data_loader import WikiArtDataset, collate_skip_none
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from datasets.csv_data_loader import csv_Dataset, collate_skip_none
+from utils.evaluate_metrics import evaluate_metrics
+
+def load_pretrained_exclude_classifier(model, checkpoint_path, device):
+    print(f"\nLoading pretrained weights from: {checkpoint_path}")
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    model_dict = model.state_dict()
+
+    # Filter out classifier layers with size mismatch
+    filtered_dict = {
+        k: v for k, v in state_dict.items()
+        if k in model_dict and model_dict[k].shape == v.shape
+    }
+
+    # Show how many layers successfully loaded
+    print(f"Loaded {len(filtered_dict)}/{len(model_dict)} layers (excluding classifier)")
+
+    # Update the model weights
+    model_dict.update(filtered_dict)
+    model.load_state_dict(model_dict)
+    return model
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device):
     model.train()
     running_loss, correct, total = 0.0, 0, 0
 
-    for batch in tqdm(dataloader, desc="Training"):
-        if batch is None:
-            continue
+    for batch in tqdm(dataloader, desc="Training", leave=False):
+        if batch is None: continue
         images, labels = batch
         images, labels = images.to(device), labels.to(device)
 
@@ -33,15 +54,13 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
 
     return running_loss / total, correct / total
 
-
 def evaluate(model, dataloader, criterion, device):
     model.eval()
     running_loss, correct, total = 0.0, 0, 0
 
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Evaluating"):
-            if batch is None:
-                continue
+        for batch in tqdm(dataloader, desc="Evaluating", leave=False):
+            if batch is None: continue
             images, labels = batch
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
@@ -82,22 +101,24 @@ def plot_metrics(history, save_path):
     plt.close()
 
 def main():
-    # === CONFIG ===
-    task = "genre"  # "artist", "style", or "genre"
+    task = "style" # genre, style
+    file = "Style" # Genre, Style
     image_root = "./datasets/wikiart"
-    train_file = f"./datasets/{task}_train"
-    val_file = f"./datasets/{task}_val"
-    class_file = f"./datasets/{task}_class"
+    train_file = f"./datasets/{file}/{task}_train.csv"
+    val_file = f"./datasets/{file}/{task}_val.csv"
+    class_file = f"./datasets/{file}/{task}_class"
     pretrained_model_path = "checkpoints/artist_best_model.pt"
 
-    num_classes = len(open(class_file).readlines())
     batch_size = 32
-    num_epochs = 20
+    num_epochs = 30
     learning_rate = 1e-4
-    patience = 5  # Early stopping patience
+    patience = 3
     save_dir = "checkpoints"
 
+    num_classes = len(open(class_file, encoding='utf-8').readlines())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    os.makedirs(save_dir, exist_ok=True)
 
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
@@ -105,55 +126,41 @@ def main():
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     ])
 
-    train_dataset = WikiArtDataset(train_file, image_root, transform)
-    val_dataset = WikiArtDataset(val_file, image_root, transform)
+    train_dataset = csv_Dataset(train_file, image_root, transform)
+    val_dataset = csv_Dataset(val_file, image_root, transform)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_skip_none)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_skip_none)
 
-    # === Load pretrained model ===
-    model = ResNetLSTM(num_classes=num_classes)
-    model.load_state_dict(torch.load(pretrained_model_path, map_location=device))
+    # === Model and load pretrained (excluding classifier) ===
+    model = ResNetLSTM(num_classes=num_classes).to(device)
+    model = load_pretrained_exclude_classifier(model, pretrained_model_path, device)
 
-    # === Replace classifier head ===
-    model.mlp_head = nn.Sequential(
-        nn.Linear(model.dim_model, model.dim_model * 2),
-        nn.ReLU(),
-        nn.Linear(model.dim_model * 2, num_classes)
-    )
-    model.to(device)
-
-    # === Loss, Optimizer, Scheduler ===
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
+    # optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    optimizer = Ranger21(model.parameters(), lr=learning_rate, num_epochs=num_epochs)
 
-    # === History Tracking ===
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=1, verbose=True)
+    
     history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": [], "lr": []}
-
-    # === Early Stopping Setup ===
     best_val_loss = float("inf")
     epochs_no_improve = 0
 
     for epoch in range(num_epochs):
         print(f"\n[Epoch {epoch + 1}/{num_epochs}]")
-
         train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_acc = evaluate(model, val_loader, criterion, device)
 
-        # Save stats
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["train_acc"].append(train_acc)
         history["val_acc"].append(val_acc)
         history["lr"].append(optimizer.param_groups[0]['lr'])
 
-        print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} || "
-              f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+        print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} || Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
         scheduler.step(val_loss)
 
-        # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
@@ -163,15 +170,16 @@ def main():
             epochs_no_improve += 1
             print(f"No improvement. ({epochs_no_improve}/{patience})")
 
-        # Early stopping check
         if epochs_no_improve >= patience:
             print("Early stopping triggered.")
             break
 
-
-    # === Plot metrics ===
     plot_metrics(history, os.path.join(save_dir, f"{task}_combined_metrics.png"))
 
+    print("\nEvaluating best model with full metrics:")
+    class_names = [line.strip() for line in open(class_file, encoding='utf-8')]
+    model.load_state_dict(torch.load(os.path.join(save_dir, f"{task}_best_model.pt")))
+    evaluate_metrics(model, val_loader, class_names, device)
+
 if __name__ == "__main__":
-    os.makedirs("checkpoints", exist_ok=True)
     main()

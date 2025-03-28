@@ -2,14 +2,16 @@ import os
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
+
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 
 from models.Resnet_LSTM import ResNetLSTM
 from datasets.data_loader import WikiArtDataset, collate_skip_none
 from utils.evaluate_metrics import evaluate_metrics
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device):
@@ -139,7 +141,6 @@ def main():
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} || "
               f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-        # === Adjust learning rate ===
         scheduler.step(val_loss)
 
         if val_loss < best_val_loss:
