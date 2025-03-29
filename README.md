@@ -110,7 +110,7 @@ Output:
 
 ### Observation: Style Label Imbalance
 
-During experimentation, we observed that the style classification task suffers from significant class imbalance. Certain art styles (e.g., Impressionism, Realism) have a large number of samples, while others (e.g., Suprematism, Symbolism) are severely underrepresented. This imbalance may affect model performance and generalization, particularly for rare classes.
+During my experiments, I noticed that the style classification task is significantly imbalanced. Some styles, such as Impressionism and Realism, are heavily represented in the dataset, while others like Suprematism or Symbolism appear far less frequently. This imbalance can negatively impact the model’s ability to generalize, especially for underrepresented styles.
 
 ---
 
