@@ -62,9 +62,9 @@ Output:
 
 ### Artist Classification
 - 🔹 Training Curve
-  <img src="checkpoints/artist_combined_metrics.png" width="500" />
+  <img src="checkpoints/artist_combined_metrics.png" width="400" />
 - 🔹 Confusion Matrix
-  <img src="checkpoints/artist_confusion_matrix.png" width="500" />
+  <img src="checkpoints/artist_confusion_matrix.png" width="400" />
 - 🔹 Classsification Report
   <img src="checkpoints/artist_class_report.png" width="400" />
 - 🔹 Outlier Sample Paint
@@ -78,9 +78,9 @@ Output:
 
 ### Genre Classification
 - 🔹 Training Curve
-  <img src="checkpoints/genre_combined_metrics.png" width="500" />
+  <img src="checkpoints/genre_combined_metrics.png" width="400" />
 - 🔹 Confusion Matrix
-  <img src="checkpoints/genre_confusion_matrix.png" width="500" />
+  <img src="checkpoints/genre_confusion_matrix.png" width="400" />
 - 🔹 Classsification Report
   <img src="checkpoints/genre_class_report.png" width="400" />
 - 🔹 Outlier Sample Paint
@@ -94,9 +94,9 @@ Output:
 
 ### Style Classification
 - 🔹 Training Curve
-  <img src="checkpoints/style_combined_metrics.png" width="500" />
+  <img src="checkpoints/style_combined_metrics.png" width="400" />
 - 🔹 Confusion Matrix
-  <img src="checkpoints/style_confusion_matrix.png" width="500" />
+  <img src="checkpoints/style_confusion_matrix.png" width="400" />
 - 🔹 Classsification Report
   <img src="checkpoints/style_class_report.png" width="400" />
 - 🔹 Outlier paint
@@ -107,6 +107,10 @@ Output:
   <img src="outliers/style_outlier_4.png" width="160" />
   <img src="outliers/style_outlier_5.png" width="160" />
 </div>
+
+### Observation: Style Label Imbalance
+
+During experimentation, we observed that the style classification task suffers from significant class imbalance. Certain art styles (e.g., Impressionism, Realism) have a large number of samples, while others (e.g., Suprematism, Symbolism) are severely underrepresented. This imbalance may affect model performance and generalization, particularly for rare classes.
 
 ---
 

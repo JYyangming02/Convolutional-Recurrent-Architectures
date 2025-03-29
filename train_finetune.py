@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -6,8 +7,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from tqdm import tqdm
 from ranger21 import Ranger21
+from tqdm import tqdm
+
 
 from models.Resnet_LSTM import ResNetLSTM
 from datasets.csv_data_loader import csv_Dataset, collate_skip_none
@@ -106,7 +108,7 @@ def main():
     image_root = "./datasets/wikiart"
     train_file = f"./datasets/{file}/{task}_train.csv"
     val_file = f"./datasets/{file}/{task}_val.csv"
-    class_file = f"./datasets/{file}/{task}_class"
+    class_file = f"./datasets/{file}/{task}_class.txt"
     pretrained_model_path = "checkpoints/artist_best_model.pt"
 
     batch_size = 32
@@ -137,8 +139,9 @@ def main():
     model = load_pretrained_exclude_classifier(model, pretrained_model_path, device)
 
     criterion = nn.CrossEntropyLoss()
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    optimizer = Ranger21(model.parameters(), lr=learning_rate, num_epochs=num_epochs)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    # optimizer = Ranger21(model.parameters(), lr=learning_rate, num_epochs=num_epochs, num_batches_per_epoch=len(train_loader))
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=1, verbose=True)
     
